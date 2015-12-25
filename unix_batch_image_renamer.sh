@@ -1,6 +1,6 @@
 for i in *.jpg; do
   md5=`md5deep "$i" | cut -c 1-7`.jpg
-  date_raw=`exif --tag="Date and Time (digitized)" "$i" | sed -n '6p'`
+  date_raw=`exif --tag="DateTimeDigitized" "$i" | sed -n '6p'`
   year=`echo "$date_raw" | cut -c 10-13`
   month=`echo "$date_raw" | cut -c 15-16`
   day=`echo "$date_raw" | cut -c 18-19`
