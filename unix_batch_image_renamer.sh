@@ -1,3 +1,5 @@
+#!/bin/bash
+
 for i in *.[Jj][Pp][Gg]; do
   md5=`md5deep "$i" | cut -c 1-7`.jpg
   date_raw=`exif --tag="DateTimeOriginal" "$i" | sed -n '6p'`
