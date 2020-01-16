@@ -6,7 +6,7 @@ according to exif data in the image.
 
 If you have docker, then cd to the folder where images are and execute:
 
-    docker run --rm -t -i --volume $(pwd)/:/app/:cached hkirsman/unix-batch-image-renamer .
+    docker run --rm -t -i --volume $(pwd)/:/app/:cached hkirsman/unix-batch-image-renamer
 
 I'm using this system to have unique file names for my photos and to order them
 nicely in the file system. First I just used time in the naming, but there where
