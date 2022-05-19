@@ -5,7 +5,7 @@ names for the image by reading the exif data in the image plus it appends
 md5 hash based on the image source. The image name becomes something like this:
 2020-01-05_13-47-38_433a170.jpg
 
-If you have Docker, then cd to the folder where images are and execute:
+If you have [Docker](https://docs.docker.com/get-docker/), then cd to the folder where images are and execute:
 
     docker run --rm -t -i --volume "$(pwd)/:/app/:cached" hkirsman/unix-batch-image-renamer
 
