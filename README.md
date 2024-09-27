@@ -9,6 +9,10 @@ If you have [Docker](https://docs.docker.com/get-docker/), then cd to the folder
 
     docker run --rm -t -i --volume "$(pwd)/:/app/:cached" hkirsman/unix-batch-image-renamer
 
+There's also argument to keep the original file name suffixed:
+
+    docker run --rm -t -i --volume "$(pwd)/:/app/:cached" hkirsman/unix-batch-image-renamer keep-file-names
+
 I'm using this system to have unique file names for my photos and to order them
 nicely in the file system. First I just used time in the naming, but there where
 files with exact same date (photos taken with little interval) so I started
