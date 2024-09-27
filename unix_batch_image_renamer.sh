@@ -5,8 +5,15 @@
 # also append unique string with md5 hash of the file.
 #
 
+# Check if the keep-file-names parameter is passed
+KEEP_FILENAMES=false
+if [ "$1" = "keep-file-names" ]; then
+    KEEP_FILENAMES=true
+    echo "Keep original filenames mode activated"
+fi
+
 # Lowercase all files.
-mmv '*' '#l1'
+mmv '*' '#l1' || echo "Warning: Lowercase conversion failed or no files to convert."
 
 # Normalize jpeg file extensions.
 mmv '*.jpeg' '#1.jpg' > /dev/null 2>&1
@@ -21,6 +28,8 @@ while IFS= read -r -d '' file; do
   md5=`md5deep "$file" | cut -c 1-7`
   file_base=$(basename -- "$file")
   extension="${file_base##*.}"
+  original_name="${file_base%.*}"
+
   date_raw=`exiftool -DateTimeOriginal "$file"`
   year=`echo "$date_raw" | cut -c 35-38`
   month=`echo "$date_raw" | cut -c 40-41`
@@ -28,18 +37,17 @@ while IFS= read -r -d '' file; do
   hour=`echo "$date_raw" | cut -c 46-47`
   minute=`echo "$date_raw" | cut -c 49-50`
   second=`echo "$date_raw" | cut -c 52-53`
-  new_file_name="$year-$month-$day"_"$hour-$minute-$second"_"$md5"."$extension"
 
-  # Start renaming but only if file name is correct.
-  # We can make the assumption from file name length because the file has
-  # either correct name:
-  # 2020-07-12_00-17-04_3d52b8b.jpg
-  # or not correct name:
-  # --_--_0eb7443.jpg
-  # So let's assume if file name is longer than 17, we can start renaming it.
-  new_file_name_length=${#new_file_name}
-  if [ $new_file_name_length -gt 17 ]
-  then
+  date_formatted="$year-$month-$day"_"$hour-$minute-$second"
+  if [ "$date_formatted" != "--_--" ]; then
+    if $KEEP_FILENAMES; then
+      new_file_name="${date_formatted}_${original_name}.${extension}"
+    else
+      new_file_name="${date_formatted}_${md5}.${extension}"
+    fi
+
     mmv -d "$file" "$new_file_name"
+  else
+    echo "Skipped: $file (no valid date found)"
   fi
 done
