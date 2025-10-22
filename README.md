@@ -22,3 +22,19 @@ the photos to a single place there was no way of making difference between them
 just by looking in the file name. By using first 7 characters of the file md5
 hash I can be sure of the file uniqueness. Also I can later check if the file
 is still ok by checking the md5.
+
+## Multi-Platform Support
+
+This Docker image supports both AMD64 (Intel) and ARM64 (Apple Silicon) architectures. The image will automatically use the correct architecture for your system.
+
+### Building Locally
+
+To build the image for your current platform:
+```bash
+make build
+```
+
+To build for both platforms (useful for distribution):
+```bash
+make build-multi
+```
