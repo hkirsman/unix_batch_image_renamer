@@ -19,9 +19,18 @@ mmv '*' '#l1' || echo "Warning: Lowercase conversion failed or no files to conve
 # Normalize jpeg file extensions.
 mmv '*.jpeg' '#1.jpg' > /dev/null 2>&1
 
+# Initialize stats counters
+count_total=0
+count_renamed=0
+count_skipped_correct=0
+count_skipped_nodate=0
+count_overwritten=0
+
 # Loop through all jpg, heic, and mov files in the current directory.
-find . -maxdepth 1 -type f \( -iname \*.jpg -o -iname \*.heic -o -iname \*.mov \) -print0 |
+# Note: Using process substitution < <() instead of a pipe | to prevent
+# the while loop from running in a subshell, which would lose our counter values!
 while IFS= read -r -d '' file; do
+  ((count_total++))
   file_base=$(basename -- "$file")
   extension="${file_base##*.}"
   original_name="${file_base%.*}"
@@ -47,12 +56,34 @@ while IFS= read -r -d '' file; do
       new_file_name="${date_formatted}_${md5}.${extension}"
     fi
 
-    # Only rename if the name is actually different, to avoid noise.
-    if [ "$file" != "./$new_file_name" ]; then
-        echo "Renaming \"$file\" to \"$new_file_name\""
+    # Check if file needs renaming, overwriting, or skipping
+    if [ "$file" == "./$new_file_name" ]; then
+        ((count_skipped_correct++))
+    else
+        # If target file already exists, it's an overwrite/deduplication
+        if [ -e "$new_file_name" ]; then
+            echo "Duplicate found! Overwriting/deduplicating \"$file\" into \"$new_file_name\""
+            ((count_overwritten++))
+        else
+            echo "Renaming \"$file\" to \"$new_file_name\""
+            ((count_renamed++))
+        fi
+
+        # Perform the actual rename
         mmv -d "$file" "$new_file_name"
     fi
   else
     echo "Skipped: $file (no valid date found)"
+    ((count_skipped_nodate++))
   fi
-done
+done < <(find . -maxdepth 1 -type f \( -iname \*.jpg -o -iname \*.heic -o -iname \*.mov \) -print0)
+
+# Print Summary Report
+echo ""
+echo "📊 --- Execution Summary --- 📊"
+echo "Total files processed:       $count_total"
+echo "Files successfully renamed:  $count_renamed"
+echo "Skipped (already correct):   $count_skipped_correct"
+echo "Skipped (no valid date):     $count_skipped_nodate"
+echo "Duplicates overwritten:      $count_overwritten"
+echo "-------------------------------"
