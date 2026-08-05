@@ -6,6 +6,12 @@
 # Intended to run in Docker (Ubuntu 22.04 → Bash 5.x). Uses Bash 4+ features (e.g. ${var,,}).
 #
 
+# Ensure we are running under Bash 4 or newer (required for ${var,,} and other features)
+if [ -z "$BASH_VERSION" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    echo "Error: This script requires Bash 4.0 or newer. Current shell/version is incompatible." >&2
+    exit 1
+fi
+
 # Check if the keep-file-names parameter is passed
 KEEP_FILENAMES=false
 if [ "$1" = "keep-file-names" ]; then
