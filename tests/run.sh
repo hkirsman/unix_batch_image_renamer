@@ -99,7 +99,7 @@ for case_dir in "${cases[@]}"; do
   mount_dir="${mount_dir//\\//}"
 
   if ! MSYS_NO_PATHCONV=1 docker run --rm -t --volume "${mount_dir}:/app:cached" "$IMAGE"; then
-    echo "FAIL: $case_name — docker run failed" >&2
+    echo "FAIL: $case_name — docker run failed (image: $IMAGE, mount: $mount_dir)" >&2
     failed=$((failed + 1))
     rm -rf "$work_dir"
     continue
