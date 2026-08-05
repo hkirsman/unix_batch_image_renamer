@@ -31,11 +31,6 @@ count_renamed=0
 count_skipped_correct=0
 count_skipped_nodate=0
 count_overwritten=0
-count_cleaned=0
-
-# Initialize interactive cleanup state
-ASKED_MS_CLEANUP=false
-DO_MS_CLEANUP=false
 
 # Loop through all jpg, heic, and mov files in the current directory.
 # Note: Using process substitution < <() instead of a pipe | to prevent
@@ -60,46 +55,9 @@ while IFS= read -r -d '' file; do
 
   # Check if we successfully found a date.
   if [ ! -z "$date_formatted" ]; then
-
     if $KEEP_FILENAMES; then
       new_file_name="${date_formatted}_${original_name}.${extension}"
     else
-      # Fast plain-text search in the binary to see if Microsoft touched it
-      if LC_ALL=C grep -a -q "MicrosoftPhoto" "$file"; then
-
-          # If we haven't asked the user yet, prompt them now
-          if [ "$ASKED_MS_CLEANUP" = false ]; then
-              echo -e "\n⚠️  WAIT! Found hidden Windows metadata in: $file_base"
-              echo "   This metadata (added by Windows Photo Gallery/Explorer) alters the file's MD5."
-              echo "   If you have duplicate files, they won't deduplicate correctly because of this!"
-              echo "   Should I strip this junk from THIS and ALL future affected files?"
-              echo "   (This safely removes Microsoft XMP, Padding, and EXIF thumbnails to normalize the MD5)"
-
-              # Read from /dev/tty because standard input is taken by the find command
-              read -p "Strip Windows metadata? (y/n): " -n 1 -r < /dev/tty
-              echo -e "\n"
-
-              ASKED_MS_CLEANUP=true
-              if [[ $REPLY =~ ^[Yy]$ ]]; then
-                  DO_MS_CLEANUP=true
-              fi
-          fi
-
-          # If the user agreed to clean, strip the data BEFORE calculating MD5
-          if [ "$DO_MS_CLEANUP" = true ]; then
-              echo "🧹 Cleaning Windows metadata from $file_base..."
-              exiftool -overwrite_original -q -q \
-                -XMP-MicrosoftPhoto:all= \
-                -EXIF:Padding= \
-                -ThumbnailImage= \
-                -Trailer:all= \
-                "$file"
-              ((count_cleaned++))
-          fi
-      fi
-      # --- END NEW LOGIC ---
-
-      # NOW calculate the MD5 (which will be clean if the user opted to fix it)
       md5=$(md5deep "$file" | cut -c 1-7)
       new_file_name="${date_formatted}_${md5}.${extension}"
     fi
@@ -134,7 +92,4 @@ echo "Files successfully renamed:  $count_renamed"
 echo "Skipped (already correct):   $count_skipped_correct"
 echo "Skipped (no valid date):     $count_skipped_nodate"
 echo "Duplicates overwritten:      $count_overwritten"
-if [ "$count_cleaned" -gt 0 ]; then
-echo "Files scrubbed of MS junk:   $count_cleaned"
-fi
 echo "-------------------------------"
