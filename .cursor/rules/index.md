@@ -1,7 +1,7 @@
 # Unix Batch Image Renamer - Cursor Rules
 
 ## Project Overview
-Docker-based tool that renames media files (JPG, JPEG, HEIC, MOV) using EXIF/video date tags plus an MD5 suffix for unique, chronologically ordered filenames.
+A Docker-based tool that renames media files (JPG, JPEG, HEIC, MOV) using EXIF/video date tags plus an MD5 suffix for unique, chronologically ordered filenames.
 
 ## Key Rules
 
