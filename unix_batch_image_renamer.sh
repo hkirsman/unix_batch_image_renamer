@@ -52,7 +52,7 @@ while IFS= read -r -d '' file; do
     if $KEEP_FILENAMES; then
       new_file_name="${date_formatted}_${original_name}.${extension}"
     else
-      md5=`md5deep "$file" | cut -c 1-7`
+      md5=$(md5deep "$file" | cut -c 1-7)
       new_file_name="${date_formatted}_${md5}.${extension}"
     fi
 
