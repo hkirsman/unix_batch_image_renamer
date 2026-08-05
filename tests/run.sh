@@ -131,7 +131,11 @@ for case_dir in "${cases[@]}"; do
     passed=$((passed + 1))
   fi
 
-  rm -rf "$work_dir"
+  if [ "${KEEP_WORK:-0}" != "1" ]; then
+    rm -rf "$work_dir"
+  else
+    echo "Keeping work dir: $work_dir"
+  fi
 done
 
 rmdir "$WORK_ROOT" 2>/dev/null || true
