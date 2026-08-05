@@ -38,3 +38,25 @@ To build for both platforms (useful for distribution):
 ```bash
 make build-multi
 ```
+
+## Testing
+
+Run the fixture suite (builds the image, then renames an isolated copy of each sample):
+
+```bash
+make test
+```
+
+Or, if you don't have `make` (image must already be built):
+
+```bash
+bash tests/run.sh
+```
+
+Each case lives under `tests/cases/<name>/`:
+
+- one media file (`.jpg`, `.jpeg`, `.heic`, or `.mov`)
+- `expected.txt` — exact final filename after rename (one line)
+- `README.md` — why this sample exists
+
+Fixtures are never modified in place; the runner copies media into `.test-work/` first.

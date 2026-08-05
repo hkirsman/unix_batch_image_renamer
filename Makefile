@@ -14,3 +14,7 @@ build-push:
 setup-buildx:
 	docker buildx create --name multiarch --use || true
 	docker buildx inspect --bootstrap
+
+# Run fixture tests (builds image first)
+test: build
+	bash tests/run.sh
