@@ -57,7 +57,7 @@ while IFS= read -r -d '' file; do
     fi
 
     # Check if file needs renaming, overwriting, or skipping
-    if [ "$file" == "./$new_file_name" ]; then
+    if [ "$file_base" = "$new_file_name" ]; then
         ((count_skipped_correct++))
     else
         # If target file already exists, it's an overwrite/deduplication
