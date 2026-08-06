@@ -102,12 +102,10 @@ while read -r count prefix; do
         ((count_potential_dupes++))
         echo "⚠️  $count files found for timestamp: $prefix" >> potential_duplicates.log
 
-        # Collect group members and classify provenance + stripped JPEG payload.
-        # Whole-file size is NOT used (MS padding/XMP/thumb inflate it).
-        # Software=Google alone is only a hint; payload hash after -all= is the check.
+        # Read-only listing: sizes + where Nexus / Microsoft / Google tags live.
+        # No file writes, no metadata stripping.
         group_files=()
-        declare -A has_ms has_google payload_md5 payload_size
-        tmp_payload_dir=$(mktemp -d)
+        declare -A has_ms has_google
 
         for f in "$prefix"*; do
             [ -f "$f" ] || continue
@@ -131,28 +129,13 @@ while read -r count prefix; do
                 has_google["$base"]=1
                 echo "      Google: Software=${software:--} [IFD0]; CreatorTool=${creator:--} [XMP-xmp]" >> potential_duplicates.log
             fi
-
-            # Image bitstream only (metadata stripped to a TEMP copy).
-            # NEVER use -overwrite_original with -o: exiftool renames the source
-            # as a backup then deletes it, which removes the original photo.
-            if [[ "${f,,}" == *.jpg || "${f,,}" == *.jpeg ]]; then
-                stripped="$tmp_payload_dir/$base"
-                if exiftool -q -q -all= -o "$stripped" "$f" 2>/dev/null; then
-                    payload_size["$base"]=$(stat -c%s "$stripped")
-                    payload_md5["$base"]=$(md5deep "$stripped" | awk '{print $1}')
-                    echo "      JPEG payload after -all=: ${payload_size[$base]} bytes, md5=${payload_md5[$base]:0:7}…" >> potential_duplicates.log
-                fi
-            fi
         done
 
-        # --- Suggestion ---
-        unique_payloads=$(printf '%s\n' "${payload_md5[@]}" | sort -u | grep -c . || true)
-        ms_count=0
+        # Tag-only hint (not proof — we no longer compare stripped JPEG payloads).
         google_count=0
         nongoggle_count=0
         for f in "${group_files[@]}"; do
             base=$(basename -- "$f")
-            [ "${has_ms[$base]}" = 1 ] && ((ms_count++))
             if [ "${has_google[$base]}" = 1 ]; then
                 ((google_count++))
             else
@@ -161,31 +144,22 @@ while read -r count prefix; do
         done
 
         echo "  Suggestion:" >> potential_duplicates.log
-        if [ "${#payload_md5[@]}" -ge 2 ] && [ "$unique_payloads" -eq 1 ]; then
-            echo "    Same JPEG payload after metadata strip — tag-only difference; keep any one copy." >> potential_duplicates.log
-            echo "    (Whole-file size ignored: MS padding/XMP/thumb make files look bigger.)" >> potential_duplicates.log
-        elif [ "$google_count" -gt 0 ] && [ "$nongoggle_count" -gt 0 ] && [ "$unique_payloads" -gt 1 ]; then
-            echo "    Likely closer to original (no Google Software/CreatorTool):" >> potential_duplicates.log
+        if [ "$google_count" -gt 0 ] && [ "$nongoggle_count" -gt 0 ]; then
+            echo "    Weak hint — prefer file(s) without Google Software/CreatorTool:" >> potential_duplicates.log
             for f in "${group_files[@]}"; do
                 base=$(basename -- "$f")
                 if [ "${has_google[$base]}" != 1 ]; then
                     note=""
-                    [ "${has_ms[$base]}" = 1 ] && note=" — has MicrosoftPhoto (Windows metadata on top, usually no recompress)"
+                    [ "${has_ms[$base]}" = 1 ] && note=" — has MicrosoftPhoto (Windows tags on top; usually no recompress)"
                     echo "      * $base$note" >> potential_duplicates.log
                 fi
             done
-            echo "    Why: Software=Google is only a hint; confirmed because stripped JPEG" >> potential_duplicates.log
-            echo "    payloads DIFFER between the Google-tagged and non-Google files." >> potential_duplicates.log
-            echo "    Not decided by whole-file size (MS copies are often larger from padding," >> potential_duplicates.log
-            echo "    while payload sizes stay nearly equal — e.g. tens of bytes, not 'bigger image')." >> potential_duplicates.log
-        elif [ "$unique_payloads" -gt 1 ]; then
-            echo "    Ambiguous: JPEG payloads differ, but tags do not form a clear MS-vs-Google split." >> potential_duplicates.log
-            echo "    Inspect manually; do not trust whole-file size alone." >> potential_duplicates.log
+            echo "    (Tag hint only; confirm visually. Whole-file size is not reliable.)" >> potential_duplicates.log
         else
-            echo "    Insufficient payload data to compare; use tags as weak hints only." >> potential_duplicates.log
+            echo "    No clear MS-vs-Google tag split; inspect manually." >> potential_duplicates.log
+            echo "    (Whole-file size is not reliable — MS padding/XMP inflate it.)" >> potential_duplicates.log
         fi
 
-        rm -rf "$tmp_payload_dir"
         echo "" >> potential_duplicates.log
     fi
 # The find command ensures we only look at files formatted by this script, ignoring logs or un-renamed files.
