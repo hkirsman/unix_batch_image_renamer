@@ -132,10 +132,12 @@ while read -r count prefix; do
                 echo "      Google: Software=${software:--} [IFD0]; CreatorTool=${creator:--} [XMP-xmp]" >> potential_duplicates.log
             fi
 
-            # Image bitstream only (metadata stripped). Skip non-JPEG if exiftool fails.
+            # Image bitstream only (metadata stripped to a TEMP copy).
+            # NEVER use -overwrite_original with -o: exiftool renames the source
+            # as a backup then deletes it, which removes the original photo.
             if [[ "${f,,}" == *.jpg || "${f,,}" == *.jpeg ]]; then
                 stripped="$tmp_payload_dir/$base"
-                if exiftool -overwrite_original -q -q -all= -o "$stripped" "$f" 2>/dev/null; then
+                if exiftool -q -q -all= -o "$stripped" "$f" 2>/dev/null; then
                     payload_size["$base"]=$(stat -c%s "$stripped")
                     payload_md5["$base"]=$(md5deep "$stripped" | awk '{print $1}')
                     echo "      JPEG payload after -all=: ${payload_size[$base]} bytes, md5=${payload_md5[$base]:0:7}…" >> potential_duplicates.log
