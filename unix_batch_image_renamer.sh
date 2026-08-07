@@ -12,6 +12,33 @@ if [ -z "$BASH_VERSION" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
     exit 1
 fi
 
+# Tag suffix for potential-duplicate filenames: _ms, _google, _ms_google, or _untagged.
+dupe_tag_suffix() {
+  local f="$1"
+  local ms=0 google=0
+  local software creator
+
+  if LC_ALL=C grep -a -q "MicrosoftPhoto" "$f"; then
+    ms=1
+  fi
+
+  software=$(exiftool -q -q -p '$Software' "$f")
+  creator=$(exiftool -q -q -p '$CreatorTool' "$f")
+  if [[ "${software,,}" == *google* ]] || [[ "${creator,,}" == *google* ]]; then
+    google=1
+  fi
+
+  if [ "$ms" = 1 ] && [ "$google" = 1 ]; then
+    echo "_ms_google"
+  elif [ "$ms" = 1 ]; then
+    echo "_ms"
+  elif [ "$google" = 1 ]; then
+    echo "_google"
+  else
+    echo "_untagged"
+  fi
+}
+
 # Check if the keep-file-names parameter is passed
 KEEP_FILENAMES=false
 if [ "$1" = "keep-file-names" ]; then
@@ -32,9 +59,11 @@ count_skipped_correct=0
 count_skipped_nodate=0
 count_overwritten=0
 count_potential_dupes=0
+count_moved=0
 
-# Clear out any previous run's log file
+# Clear out any previous run's log / move-list files
 > potential_duplicates.log
+printf '%s\n' '# potential duplicate groups (basenames). Blank line separates groups.' > potential_duplicates.txt
 
 # ==========================================
 # PHASE 1: RENAME AND HASH ALL FILES
@@ -115,6 +144,8 @@ while read -r count prefix; do
             has_ms["$base"]=0
             has_google["$base"]=0
 
+            echo "$base" >> potential_duplicates.txt
+
             stat -c "  - %n (%s bytes)" "$f" >> potential_duplicates.log
             exiftool -q -q -p '      Nexus [IFD0]: $Make / $Model' "$f" >> potential_duplicates.log
 
@@ -126,11 +157,14 @@ while read -r count prefix; do
 
             software=$(exiftool -q -q -p '$Software' "$f")
             creator=$(exiftool -q -q -p '$CreatorTool' "$f")
-            if [ -n "$software" ] || [ -n "$creator" ]; then
+            if [[ "${software,,}" == *google* ]] || [[ "${creator,,}" == *google* ]]; then
                 has_google["$base"]=1
                 echo "      Google: Software=${software:--} [IFD0]; CreatorTool=${creator:--} [XMP-xmp]" >> potential_duplicates.log
             fi
         done
+
+        # Blank line separates groups in the simple move-list.
+        echo "" >> potential_duplicates.txt
 
         # Tag-only hint (not proof — we no longer compare stripped JPEG payloads).
         google_count=0
@@ -178,6 +212,59 @@ echo "Skipped (already correct):   $count_skipped_correct"
 echo "Skipped (no valid date):     $count_skipped_nodate"
 echo "Duplicates overwritten:      $count_overwritten"
 if [ "$count_potential_dupes" -gt 0 ]; then
-echo "⚠️  Potential dupes found:     $count_potential_dupes sets (See potential_duplicates.log)"
+echo "⚠️  Potential dupes found:     $count_potential_dupes sets (See potential_duplicates.log / .txt)"
+fi
+
+# ==========================================
+# PHASE 3: OPTIONAL MOVE TO duplicates/
+# ==========================================
+if [ "$count_potential_dupes" -gt 0 ]; then
+    do_move=false
+    move_env="${MOVE_DUPLICATES,,}"
+    case "$move_env" in
+        yes|y|1|true)
+            do_move=true
+            ;;
+        no|n|0|false)
+            do_move=false
+            ;;
+        *)
+            if [ -r /dev/tty ]; then
+                echo ""
+                echo "Found $count_potential_dupes potential duplicate set(s)."
+                echo "Logged in potential_duplicates.log; move list in potential_duplicates.txt."
+                read -r -p "Move all listed files into ./duplicates/ with tag suffixes (_ms/_google/…)? [y/N] " answer </dev/tty
+                case "${answer,,}" in
+                    y|yes) do_move=true ;;
+                esac
+            else
+                echo "Potential duplicates left in place (no TTY). Set MOVE_DUPLICATES=yes to move non-interactively."
+            fi
+            ;;
+    esac
+
+    if $do_move; then
+        mkdir -p duplicates
+        while IFS= read -r line || [ -n "$line" ]; do
+            # Skip comments and blank lines (group separators).
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            if [ ! -f "$line" ]; then
+                echo "Warning: listed file not found, skipping: $line"
+                continue
+            fi
+            stem="${line%.*}"
+            ext="${line##*.}"
+            suffix=$(dupe_tag_suffix "$line")
+            dest="duplicates/${stem}${suffix}.${ext}"
+            if [ -e "$dest" ]; then
+                echo "Warning: target already exists, skipping: $dest"
+                continue
+            fi
+            echo "Moving \"$line\" -> \"$dest\""
+            mv -- "$line" "$dest"
+            ((count_moved++))
+        done < potential_duplicates.txt
+        echo "Moved to duplicates/:          $count_moved files"
+    fi
 fi
 echo "-------------------------------"
