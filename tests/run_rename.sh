@@ -91,7 +91,11 @@ for case_dir in "${cases[@]}"; do
     continue
   fi
 
-  mapfile -t actual_files < <(list_media_basenames_sorted "$work_dir")
+  actual_files=()
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] || continue
+    actual_files+=("$line")
+  done < <(list_media_basenames_sorted "$work_dir")
 
   if [ ${#actual_files[@]} -eq 0 ]; then
     echo "FAIL: $original_name — no media files left after rename" >&2
