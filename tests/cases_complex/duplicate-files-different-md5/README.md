@@ -1,4 +1,4 @@
-# windows-jpeg-metadata
+# duplicate-files-different-md5
 
 Two same-second MS vs Google JPEG pairs (Nexus 4). Different MD5s, so Phase 1
 keeps both; Phase 2 logs them as potential duplicates.
