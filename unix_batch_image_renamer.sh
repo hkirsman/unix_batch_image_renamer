@@ -105,7 +105,8 @@ while read -r count prefix; do
         # Read-only listing: sizes + where Nexus / Microsoft / Google tags live.
         # No file writes, no metadata stripping.
         group_files=()
-        declare -A has_ms has_google
+        # Re-init empty each group — plain `declare -A x` keeps prior keys.
+        declare -A has_ms=() has_google=()
 
         for f in "$prefix"*; do
             [ -f "$f" ] || continue
