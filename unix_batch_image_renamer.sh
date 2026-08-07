@@ -134,18 +134,18 @@ while read -r count prefix; do
 
         # Tag-only hint (not proof — we no longer compare stripped JPEG payloads).
         google_count=0
-        nongoggle_count=0
+        non_google_count=0
         for f in "${group_files[@]}"; do
             base=$(basename -- "$f")
             if [ "${has_google[$base]}" = 1 ]; then
                 ((google_count++))
             else
-                ((nongoggle_count++))
+                ((non_google_count++))
             fi
         done
 
         echo "  Suggestion:" >> potential_duplicates.log
-        if [ "$google_count" -gt 0 ] && [ "$nongoggle_count" -gt 0 ]; then
+        if [ "$google_count" -gt 0 ] && [ "$non_google_count" -gt 0 ]; then
             echo "    Weak hint — prefer file(s) without Google Software/CreatorTool:" >> potential_duplicates.log
             for f in "${group_files[@]}"; do
                 base=$(basename -- "$f")
