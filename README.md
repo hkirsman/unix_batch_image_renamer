@@ -30,7 +30,7 @@ of the “same” photo that still share the same capture second (e.g. a Windows
 MicrosoftPhoto copy vs a Google-processed copy) keep different MD5s and both
 survive. After renaming, the script groups those same-second files and writes:
 
-- `potential_duplicates.log` — human-readable sizes, camera/Make, MS/Google tag hints
+- `potential_duplicates.log` — human-readable sizes, camera/Make, MS/Google/Adobe tag hints
 - `potential_duplicates.txt` — basenames only (blank line between groups); used as the move list
 
 If any sets are found, you are prompted once to move **all** listed files into
@@ -38,10 +38,11 @@ If any sets are found, you are prompted once to move **all** listed files into
 
 | Tags | Suffix |
 |------|--------|
-| MicrosoftPhoto only | `_ms` |
-| Google Software/CreatorTool only | `_google` |
-| Both | `_ms_google` |
-| Neither | `_untagged` |
+| MicrosoftPhoto | `_ms` |
+| Google Software/CreatorTool | `_google` |
+| Photoshop IRB (`Photoshop 3.0`) / `Adobe Photoshop` | `_adobe` |
+| Combinations | concatenated in that order, e.g. `_ms_google`, `_ms_adobe` |
+| None of the above | `_untagged` |
 
 Example: `2013-06-20_14-43-41_789f3aa.jpg` → `duplicates/2013-06-20_14-43-41_789f3aa_ms.jpg`
 

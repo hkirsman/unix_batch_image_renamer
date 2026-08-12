@@ -12,11 +12,14 @@ if [ -z "$BASH_VERSION" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
     exit 1
 fi
 
-# Tag suffix for potential-duplicate filenames: _ms, _google, _ms_google, or _untagged.
+# Tag suffix for potential-duplicate filenames: _ms / _google / _adobe (combinable), or _untagged.
+# Adobe = Photoshop IRB ("Photoshop 3.0") or "Adobe Photoshop" — NOT the generic XMP ns URI
+# (http://ns.adobe.com/xap appears in almost any XMP packet, including MS/Google).
 dupe_tag_suffix() {
   local f="$1"
-  local ms=0 google=0
+  local ms=0 google=0 adobe=0
   local software creator
+  local suffix=""
 
   if LC_ALL=C grep -a -q "MicrosoftPhoto" "$f"; then
     ms=1
@@ -28,14 +31,17 @@ dupe_tag_suffix() {
     google=1
   fi
 
-  if [ "$ms" = 1 ] && [ "$google" = 1 ]; then
-    echo "_ms_google"
-  elif [ "$ms" = 1 ]; then
-    echo "_ms"
-  elif [ "$google" = 1 ]; then
-    echo "_google"
-  else
+  if LC_ALL=C grep -a -q "Photoshop 3.0" "$f" || LC_ALL=C grep -a -q "Adobe Photoshop" "$f"; then
+    adobe=1
+  fi
+
+  [ "$ms" = 1 ] && suffix+="_ms"
+  [ "$google" = 1 ] && suffix+="_google"
+  [ "$adobe" = 1 ] && suffix+="_adobe"
+  if [ -z "$suffix" ]; then
     echo "_untagged"
+  else
+    echo "$suffix"
   fi
 }
 
@@ -131,11 +137,11 @@ while read -r count prefix; do
         ((count_potential_dupes++))
         echo "⚠️  $count files found for timestamp: $prefix" >> potential_duplicates.log
 
-        # Read-only listing: sizes + where Nexus / Microsoft / Google tags live.
+        # Read-only listing: sizes + where Nexus / Microsoft / Google / Adobe tags live.
         # No file writes, no metadata stripping.
         group_files=()
         # Re-init empty each group — plain `declare -A x` keeps prior keys.
-        declare -A has_ms=() has_google=()
+        declare -A has_ms=() has_google=() has_adobe=()
 
         for f in "$prefix"*; do
             [ -f "$f" ] || continue
@@ -143,6 +149,7 @@ while read -r count prefix; do
             base=$(basename -- "$f")
             has_ms["$base"]=0
             has_google["$base"]=0
+            has_adobe["$base"]=0
 
             echo "$base" >> potential_duplicates.txt
 
@@ -161,6 +168,11 @@ while read -r count prefix; do
                 has_google["$base"]=1
                 echo "      Google: Software=${software:--} [IFD0]; CreatorTool=${creator:--} [XMP-xmp]" >> potential_duplicates.log
             fi
+
+            if LC_ALL=C grep -a -q "Photoshop 3.0" "$f" || LC_ALL=C grep -a -q "Adobe Photoshop" "$f"; then
+                has_adobe["$base"]=1
+                echo "      Adobe: Photoshop IRB / Adobe Photoshop marker" >> potential_duplicates.log
+            fi
         done
 
         # Blank line separates groups in the simple move-list.
@@ -169,12 +181,19 @@ while read -r count prefix; do
         # Tag-only hint (not proof — we no longer compare stripped JPEG payloads).
         google_count=0
         non_google_count=0
+        adobe_count=0
+        non_adobe_count=0
         for f in "${group_files[@]}"; do
             base=$(basename -- "$f")
             if [ "${has_google[$base]}" = 1 ]; then
                 ((google_count++))
             else
                 ((non_google_count++))
+            fi
+            if [ "${has_adobe[$base]}" = 1 ]; then
+                ((adobe_count++))
+            else
+                ((non_adobe_count++))
             fi
         done
 
@@ -186,12 +205,24 @@ while read -r count prefix; do
                 if [ "${has_google[$base]}" != 1 ]; then
                     note=""
                     [ "${has_ms[$base]}" = 1 ] && note=" — has MicrosoftPhoto (Windows tags on top; usually no recompress)"
+                    [ "${has_adobe[$base]}" = 1 ] && note="${note} — has Adobe Photoshop IRB"
+                    echo "      * $base$note" >> potential_duplicates.log
+                fi
+            done
+            echo "    (Tag hint only; confirm visually. Whole-file size is not reliable.)" >> potential_duplicates.log
+        elif [ "$adobe_count" -gt 0 ] && [ "$non_adobe_count" -gt 0 ]; then
+            echo "    Weak hint — prefer file(s) without Adobe Photoshop IRB:" >> potential_duplicates.log
+            for f in "${group_files[@]}"; do
+                base=$(basename -- "$f")
+                if [ "${has_adobe[$base]}" != 1 ]; then
+                    note=""
+                    [ "${has_ms[$base]}" = 1 ] && note=" — has MicrosoftPhoto (Windows tags on top; usually no recompress)"
                     echo "      * $base$note" >> potential_duplicates.log
                 fi
             done
             echo "    (Tag hint only; confirm visually. Whole-file size is not reliable.)" >> potential_duplicates.log
         else
-            echo "    No clear MS-vs-Google tag split; inspect manually." >> potential_duplicates.log
+            echo "    No clear MS/Google/Adobe tag split; inspect manually." >> potential_duplicates.log
             echo "    (Whole-file size is not reliable — MS padding/XMP inflate it.)" >> potential_duplicates.log
         fi
 
@@ -233,7 +264,7 @@ if [ "$count_potential_dupes" -gt 0 ]; then
                 echo ""
                 echo "Found $count_potential_dupes potential duplicate set(s)."
                 echo "Logged in potential_duplicates.log; move list in potential_duplicates.txt."
-                read -r -p "Move all listed files into ./duplicates/ with tag suffixes (_ms/_google/…)? [y/N] " answer </dev/tty
+                read -r -p "Move all listed files into ./duplicates/ with tag suffixes (_ms/_google/_adobe/…)? [y/N] " answer </dev/tty
                 case "${answer,,}" in
                     y|yes) do_move=true ;;
                 esac
