@@ -33,9 +33,11 @@ A Docker-based tool that renames media files (JPG, JPEG, HEIC, MOV) using EXIF/v
 - `make test` — build image, then run fixture suite (`bash tests/run.sh` if no make)
 
 ### Testing
-- Cases live in `tests/cases/<name>/`: one media file, `expected.txt` (exact final name), `README.md` (why the case exists)
-- Never run the renamer on committed fixtures — `tests/run.sh` copies media only into `.test-work/`
-- Golden `expected.txt` names must be hand-recorded from a known-good run; do not recompute date+md5 inside the assert
+- `make test` / `bash tests/run.sh` runs both suites (`run_rename.sh` + `run_complex.sh`)
+- Rename cases: `tests/cases_rename/<name>/` — one media file, `expected.txt`, `README.md`
+- Complex cases: `tests/cases_complex/<name>/` — multi-file; `expected_yes_duplicates.txt`, `expected_no_toplevel.txt`, `expected_potential_duplicates.txt`, `README.md`
+- Never run the renamer on committed fixtures — runners copy media only into `.test-work/`
+- Golden expected names must be hand-recorded from a known-good run; do not recompute date+md5 inside the assert
 - Keep fixtures small (plain Git is fine; no LFS required for current sizes)
 - After changing the renamer, run `make test` or `bash tests/run.sh`
 

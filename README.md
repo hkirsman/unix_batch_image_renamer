@@ -23,6 +23,37 @@ just by looking in the file name. By using first 7 characters of the file md5
 hash I can be sure of the file uniqueness. Also I can later check if the file
 is still ok by checking the md5.
 
+## Potential duplicates
+
+Exact byte duplicates (same MD5) are overwritten during rename. Different copies
+of the “same” photo that still share the same capture second (e.g. a Windows
+MicrosoftPhoto copy vs a Google-processed copy) keep different MD5s and both
+survive. After renaming, the script groups those same-second files and writes:
+
+- `potential_duplicates.log` — human-readable sizes, camera/Make, MS/Google/Adobe tag hints
+- `potential_duplicates.txt` — basenames only (blank line between groups); used as the move list
+
+If any sets are found, you are prompted once to move **all** listed files into
+`./duplicates/`, appending a tag suffix before the extension:
+
+| Tags | Suffix |
+|------|--------|
+| MicrosoftPhoto | `_ms` |
+| Google Software/CreatorTool | `_google` |
+| Photoshop IRB (`Photoshop 3.0`) / `Adobe Photoshop` | `_adobe` |
+| Combinations | concatenated in that order, e.g. `_ms_google`, `_ms_adobe` |
+| None of the above | `_untagged` |
+
+Example: `2013-06-20_14-43-41_789f3aa.jpg` → `duplicates/2013-06-20_14-43-41_789f3aa_ms.jpg`
+
+Decline the prompt (default) to leave files in place and review from the logs.
+For non-interactive runs (no TTY), set an environment variable:
+
+```bash
+docker run --rm -t -i -e MOVE_DUPLICATES=yes --volume "$(pwd)/:/app/:cached" hkirsman/unix-batch-image-renamer
+# or MOVE_DUPLICATES=no to skip the move without prompting
+```
+
 ## Multi-Platform Support
 
 This Docker image supports both AMD64 (Intel) and ARM64 (Apple Silicon) architectures. The image will automatically use the correct architecture for your system.
@@ -41,7 +72,7 @@ make build-multi
 
 ## Testing
 
-Run the fixture suite (builds the image, then renames an isolated copy of each sample):
+Run all fixture suites (builds the image first):
 
 ```bash
 make test
@@ -50,13 +81,28 @@ make test
 Or, if you don't have `make` (image must already be built):
 
 ```bash
-bash tests/run.sh
+bash tests/run.sh          # both suites
+bash tests/run_rename.sh   # single-file rename only
+bash tests/run_complex.sh  # potential-duplicate / MOVE_DUPLICATES only
 ```
 
-Each case lives under `tests/cases/<name>/`:
+### `tests/cases_rename/<name>/`
+
+One media file per case:
 
 - one media file (`.jpg`, `.jpeg`, `.heic`, or `.mov`)
 - `expected.txt` — exact final filename after rename (one line)
 - `README.md` — why this sample exists
 
-Fixtures are never modified in place; the runner copies media into `.test-work/` first.
+### `tests/cases_complex/<name>/`
+
+Multi-file cases (e.g. same-second MS vs Google pairs). Each case is run with
+`MOVE_DUPLICATES=yes` and `MOVE_DUPLICATES=no`:
+
+- two or more media files
+- `expected_yes_duplicates.txt` — sorted basenames under `duplicates/` after yes
+- `expected_no_toplevel.txt` — sorted basenames left top-level after no
+- `expected_potential_duplicates.txt` — exact `potential_duplicates.txt`
+- `README.md` — why this sample exists
+
+Fixtures are never modified in place; runners copy media into `.test-work/` first.

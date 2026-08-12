@@ -12,6 +12,39 @@ if [ -z "$BASH_VERSION" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
     exit 1
 fi
 
+# Tag suffix for potential-duplicate filenames: _ms / _google / _adobe (combinable), or _untagged.
+# Adobe = Photoshop IRB ("Photoshop 3.0") or "Adobe Photoshop" — NOT the generic XMP ns URI
+# (http://ns.adobe.com/xap appears in almost any XMP packet, including MS/Google).
+dupe_tag_suffix() {
+  local f="$1"
+  local ms=0 google=0 adobe=0
+  local software creator
+  local suffix=""
+
+  if LC_ALL=C grep -a -q "MicrosoftPhoto" "$f"; then
+    ms=1
+  fi
+
+  software=$(exiftool -q -q -p '$Software' "$f")
+  creator=$(exiftool -q -q -p '$CreatorTool' "$f")
+  if [[ "${software,,}" == *google* ]] || [[ "${creator,,}" == *google* ]]; then
+    google=1
+  fi
+
+  if LC_ALL=C grep -a -q "Photoshop 3.0" "$f" || LC_ALL=C grep -a -q "Adobe Photoshop" "$f"; then
+    adobe=1
+  fi
+
+  [ "$ms" = 1 ] && suffix+="_ms"
+  [ "$google" = 1 ] && suffix+="_google"
+  [ "$adobe" = 1 ] && suffix+="_adobe"
+  if [ -z "$suffix" ]; then
+    echo "_untagged"
+  else
+    echo "$suffix"
+  fi
+}
+
 # Check if the keep-file-names parameter is passed
 KEEP_FILENAMES=false
 if [ "$1" = "keep-file-names" ]; then
@@ -31,7 +64,16 @@ count_renamed=0
 count_skipped_correct=0
 count_skipped_nodate=0
 count_overwritten=0
+count_potential_dupes=0
+count_moved=0
 
+# Clear out any previous run's log / move-list files
+> potential_duplicates.log
+printf '%s\n' '# potential duplicate groups (basenames). Blank line separates groups.' > potential_duplicates.txt
+
+# ==========================================
+# PHASE 1: RENAME AND HASH ALL FILES
+# ==========================================
 # Loop through all jpg, heic, and mov files in the current directory.
 # Note: Using process substitution < <() instead of a pipe | to prevent
 # the while loop from running in a subshell, which would lose our counter values!
@@ -84,7 +126,115 @@ while IFS= read -r -d '' file; do
   fi
 done < <(find . -maxdepth 1 -type f \( -iname \*.jpg -o -iname \*.heic -o -iname \*.mov \) -print0)
 
-# Print Summary Report
+# ==========================================
+# PHASE 2: POST-PROCESSING DUPLICATE CHECK
+# ==========================================
+echo "Scanning for potential duplicates (files sharing the exact same second)..."
+
+# Find files matching our timestamp pattern, extract the first 19 chars (YYYY-MM-DD_HH-MM-SS), and count occurrences
+while read -r count prefix; do
+    if [ "$count" -gt 1 ]; then
+        ((count_potential_dupes++))
+        echo "⚠️  $count files found for timestamp: $prefix" >> potential_duplicates.log
+
+        # Read-only listing: sizes + where Nexus / Microsoft / Google / Adobe tags live.
+        # No file writes, no metadata stripping.
+        group_files=()
+        # Re-init empty each group — plain `declare -A x` keeps prior keys.
+        declare -A has_ms=() has_google=() has_adobe=()
+
+        for f in "$prefix"*; do
+            [ -f "$f" ] || continue
+            group_files+=("$f")
+            base=$(basename -- "$f")
+            has_ms["$base"]=0
+            has_google["$base"]=0
+            has_adobe["$base"]=0
+
+            echo "$base" >> potential_duplicates.txt
+
+            stat -c "  - %n (%s bytes)" "$f" >> potential_duplicates.log
+            exiftool -q -q -p '      Nexus [IFD0]: $Make / $Model' "$f" >> potential_duplicates.log
+
+            if LC_ALL=C grep -a -q "MicrosoftPhoto" "$f"; then
+                has_ms["$base"]=1
+                acquired=$(exiftool -q -q -p '$DateAcquired' "$f")
+                echo "      Microsoft [XMP-microsoft]: MicrosoftPhoto marker; DateAcquired=${acquired:-none}" >> potential_duplicates.log
+            fi
+
+            software=$(exiftool -q -q -p '$Software' "$f")
+            creator=$(exiftool -q -q -p '$CreatorTool' "$f")
+            if [[ "${software,,}" == *google* ]] || [[ "${creator,,}" == *google* ]]; then
+                has_google["$base"]=1
+                echo "      Google: Software=${software:--} [IFD0]; CreatorTool=${creator:--} [XMP-xmp]" >> potential_duplicates.log
+            fi
+
+            if LC_ALL=C grep -a -q "Photoshop 3.0" "$f" || LC_ALL=C grep -a -q "Adobe Photoshop" "$f"; then
+                has_adobe["$base"]=1
+                echo "      Adobe: Photoshop IRB / Adobe Photoshop marker" >> potential_duplicates.log
+            fi
+        done
+
+        # Blank line separates groups in the simple move-list.
+        echo "" >> potential_duplicates.txt
+
+        # Tag-only hint (not proof — we no longer compare stripped JPEG payloads).
+        google_count=0
+        non_google_count=0
+        adobe_count=0
+        non_adobe_count=0
+        for f in "${group_files[@]}"; do
+            base=$(basename -- "$f")
+            if [ "${has_google[$base]}" = 1 ]; then
+                ((google_count++))
+            else
+                ((non_google_count++))
+            fi
+            if [ "${has_adobe[$base]}" = 1 ]; then
+                ((adobe_count++))
+            else
+                ((non_adobe_count++))
+            fi
+        done
+
+        echo "  Suggestion:" >> potential_duplicates.log
+        if [ "$google_count" -gt 0 ] && [ "$non_google_count" -gt 0 ]; then
+            echo "    Weak hint — prefer file(s) without Google Software/CreatorTool:" >> potential_duplicates.log
+            for f in "${group_files[@]}"; do
+                base=$(basename -- "$f")
+                if [ "${has_google[$base]}" != 1 ]; then
+                    note=""
+                    [ "${has_ms[$base]}" = 1 ] && note=" — has MicrosoftPhoto (Windows tags on top; usually no recompress)"
+                    [ "${has_adobe[$base]}" = 1 ] && note="${note} — has Adobe Photoshop IRB"
+                    echo "      * $base$note" >> potential_duplicates.log
+                fi
+            done
+            echo "    (Tag hint only; confirm visually. Whole-file size is not reliable.)" >> potential_duplicates.log
+        elif [ "$adobe_count" -gt 0 ] && [ "$non_adobe_count" -gt 0 ]; then
+            echo "    Weak hint — prefer file(s) without Adobe Photoshop IRB:" >> potential_duplicates.log
+            for f in "${group_files[@]}"; do
+                base=$(basename -- "$f")
+                if [ "${has_adobe[$base]}" != 1 ]; then
+                    note=""
+                    [ "${has_ms[$base]}" = 1 ] && note=" — has MicrosoftPhoto (Windows tags on top; usually no recompress)"
+                    echo "      * $base$note" >> potential_duplicates.log
+                fi
+            done
+            echo "    (Tag hint only; confirm visually. Whole-file size is not reliable.)" >> potential_duplicates.log
+        else
+            echo "    No clear MS/Google/Adobe tag split; inspect manually." >> potential_duplicates.log
+            echo "    (Whole-file size is not reliable — MS padding/XMP inflate it.)" >> potential_duplicates.log
+        fi
+
+        echo "" >> potential_duplicates.log
+    fi
+# The find command ensures we only look at files formatted by this script, ignoring logs or un-renamed files.
+done < <(find . -maxdepth 1 -type f -name "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*" -printf "%f\n" | cut -c 1-19 | sort | uniq -c)
+
+
+# ==========================================
+# SUMMARY REPORT
+# ==========================================
 echo ""
 echo "📊 --- Execution Summary --- 📊"
 echo "Total files processed:       $count_total"
@@ -92,4 +242,60 @@ echo "Files successfully renamed:  $count_renamed"
 echo "Skipped (already correct):   $count_skipped_correct"
 echo "Skipped (no valid date):     $count_skipped_nodate"
 echo "Duplicates overwritten:      $count_overwritten"
+if [ "$count_potential_dupes" -gt 0 ]; then
+echo "⚠️  Potential dupes found:     $count_potential_dupes sets (See potential_duplicates.log / .txt)"
+fi
+
+# ==========================================
+# PHASE 3: OPTIONAL MOVE TO duplicates/
+# ==========================================
+if [ "$count_potential_dupes" -gt 0 ]; then
+    do_move=false
+    move_env="${MOVE_DUPLICATES,,}"
+    case "$move_env" in
+        yes|y|1|true)
+            do_move=true
+            ;;
+        no|n|0|false)
+            do_move=false
+            ;;
+        *)
+            if [ -r /dev/tty ]; then
+                echo ""
+                echo "Found $count_potential_dupes potential duplicate set(s)."
+                echo "Logged in potential_duplicates.log; move list in potential_duplicates.txt."
+                read -r -p "Move all listed files into ./duplicates/ with tag suffixes (_ms/_google/_adobe/…)? [y/N] " answer </dev/tty
+                case "${answer,,}" in
+                    y|yes) do_move=true ;;
+                esac
+            else
+                echo "Potential duplicates left in place (no TTY). Set MOVE_DUPLICATES=yes to move non-interactively."
+            fi
+            ;;
+    esac
+
+    if $do_move; then
+        mkdir -p duplicates
+        while IFS= read -r line || [ -n "$line" ]; do
+            # Skip comments and blank lines (group separators).
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            if [ ! -f "$line" ]; then
+                echo "Warning: listed file not found, skipping: $line"
+                continue
+            fi
+            stem="${line%.*}"
+            ext="${line##*.}"
+            suffix=$(dupe_tag_suffix "$line")
+            dest="duplicates/${stem}${suffix}.${ext}"
+            if [ -e "$dest" ]; then
+                echo "Warning: target already exists, skipping: $dest"
+                continue
+            fi
+            echo "Moving \"$line\" -> \"$dest\""
+            mv -- "$line" "$dest"
+            ((count_moved++))
+        done < potential_duplicates.txt
+        echo "Moved to duplicates/:          $count_moved files"
+    fi
+fi
 echo "-------------------------------"
