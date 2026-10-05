@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Script to rename any jpg, jpeg, heic, or mov file to contain its original date and
+# Script to rename any jpg, jpeg, heic, mov, or mp4 file to contain its original date and
 # also append a unique string with the md5 hash of the file.
 #
 # Intended to run in Docker (Ubuntu 22.04 → Bash 5.x). Uses Bash 4+ features (e.g. ${var,,}).
@@ -32,7 +32,7 @@ count_skipped_correct=0
 count_skipped_nodate=0
 count_overwritten=0
 
-# Loop through all jpg, heic, and mov files in the current directory.
+# Loop through all jpg, heic, mov, and mp4 files in the current directory.
 # Note: Using process substitution < <() instead of a pipe | to prevent
 # the while loop from running in a subshell, which would lose our counter values!
 while IFS= read -r -d '' file; do
@@ -51,6 +51,21 @@ while IFS= read -r -d '' file; do
   # If that tag was empty, try the tag common for videos.
   if [ -z "$date_formatted" ]; then
       date_formatted=$(exiftool -q -q -p '$CreateDate' -d "%Y-%m-%d_%H-%M-%S" "$file")
+  fi
+
+  # Discard anything that isn't a real formatted date. exiftool returns unset
+  # video dates unformatted as "0000:00:00 00:00:00".
+  if [[ ! "$date_formatted" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]] \
+      || [[ "$date_formatted" == 0000-* ]]; then
+      date_formatted=""
+  fi
+
+  # Fall back to a date embedded in the filename, e.g. vid_20190415_094527.mp4,
+  # img_20190415_094527.jpg, pxl_20260929_070552149.mp4 or 20190415_094527.mp4.
+  if [ -z "$date_formatted" ] \
+      && [[ "$original_name" =~ (^|[^0-9])((19|20)[0-9]{2})(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[_-]([01][0-9]|2[0-3])([0-5][0-9])([0-5][0-9]) ]]; then
+      date_formatted="${BASH_REMATCH[2]}-${BASH_REMATCH[4]}-${BASH_REMATCH[5]}_${BASH_REMATCH[6]}-${BASH_REMATCH[7]}-${BASH_REMATCH[8]}"
+      echo "No date metadata in $file, using date from filename: $date_formatted"
   fi
 
   # Check if we successfully found a date.
@@ -82,7 +97,7 @@ while IFS= read -r -d '' file; do
     echo "Skipped: $file (no valid date found)"
     ((count_skipped_nodate++))
   fi
-done < <(find . -maxdepth 1 -type f \( -iname \*.jpg -o -iname \*.heic -o -iname \*.mov \) -print0)
+done < <(find . -maxdepth 1 -type f \( -iname \*.jpg -o -iname \*.heic -o -iname \*.mov -o -iname \*.mp4 \) -print0)
 
 # Print Summary Report
 echo ""

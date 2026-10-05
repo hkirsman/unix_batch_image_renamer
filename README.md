@@ -55,7 +55,7 @@ bash tests/run.sh
 
 Each case lives under `tests/cases/<name>/`:
 
-- one media file (`.jpg`, `.jpeg`, `.heic`, or `.mov`)
+- one media file (`.jpg`, `.jpeg`, `.heic`, `.mov`, or `.mp4`)
 - `expected.txt` — exact final filename after rename (one line)
 - `README.md` — why this sample exists
 

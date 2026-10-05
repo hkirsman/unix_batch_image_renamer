@@ -36,7 +36,7 @@ is_media() {
   ext="${base##*.}"
   ext="$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"
   case "$ext" in
-    jpg|jpeg|heic|mov) return 0 ;;
+    jpg|jpeg|heic|mov|mp4) return 0 ;;
     *) return 1 ;;
   esac
 }
