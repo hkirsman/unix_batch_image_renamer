@@ -25,6 +25,17 @@ mmv '*' '#l1' || echo "Warning: Lowercase conversion failed or no files to conve
 # Normalize jpeg file extensions.
 mmv '*.jpeg' '#1.jpg' > /dev/null 2>&1
 
+# Return success if $1 is a real date in YYYY-MM-DD_HH-MM-SS form. Rejects
+# exiftool's unformatted "0000:00:00 00:00:00" for unset video dates and
+# impossible calendar dates such as 2023-02-31 (round-trip via GNU date).
+is_valid_date() {
+  local d="$1"
+  [[ "$d" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})_([0-9]{2})-([0-9]{2})-([0-9]{2})$ ]] || return 1
+  [[ "$d" != 0000-* ]] || return 1
+  local iso="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}:${BASH_REMATCH[3]}:${BASH_REMATCH[4]}"
+  [ "$(date -u -d "$iso" '+%Y-%m-%d_%H-%M-%S' 2>/dev/null)" = "$d" ]
+}
+
 # Initialize stats counters
 count_total=0
 count_renamed=0
@@ -44,28 +55,27 @@ while IFS= read -r -d '' file; do
   # Force the extension to be lowercase (Bash 4+; Docker image has Bash 5.x).
   extension="${extension,,}"
 
-  # Use exiftool to extract and format the date directly (suppressing warnings with -q -q)
-  # First, try the tag common for images.
-  date_formatted=$(exiftool -q -q -p '$DateTimeOriginal' -d "%Y-%m-%d_%H-%M-%S" "$file")
-
-  # If that tag was empty, try the tag common for videos.
-  if [ -z "$date_formatted" ]; then
-      date_formatted=$(exiftool -q -q -p '$CreateDate' -d "%Y-%m-%d_%H-%M-%S" "$file")
-  fi
-
-  # Discard anything that isn't a real formatted date. exiftool returns unset
-  # video dates unformatted as "0000:00:00 00:00:00".
-  if [[ ! "$date_formatted" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]] \
-      || [[ "$date_formatted" == 0000-* ]]; then
-      date_formatted=""
-  fi
+  # Use exiftool to extract and format the date directly (suppressing warnings with -q -q).
+  # Try the tag common for images first, then the tag common for videos. A tag
+  # that is empty or unusable (e.g. zeroed) is skipped like a missing one.
+  date_formatted=""
+  for tag in DateTimeOriginal CreateDate; do
+      candidate=$(exiftool -q -q -p "\$$tag" -d "%Y-%m-%d_%H-%M-%S" "$file")
+      if is_valid_date "$candidate"; then
+          date_formatted="$candidate"
+          break
+      fi
+  done
 
   # Fall back to a date embedded in the filename, e.g. vid_20190415_094527.mp4,
   # img_20190415_094527.jpg, pxl_20260929_070552149.mp4 or 20190415_094527.mp4.
   if [ -z "$date_formatted" ] \
-      && [[ "$original_name" =~ (^|[^0-9])((19|20)[0-9]{2})(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[_-]([01][0-9]|2[0-3])([0-5][0-9])([0-5][0-9]) ]]; then
-      date_formatted="${BASH_REMATCH[2]}-${BASH_REMATCH[4]}-${BASH_REMATCH[5]}_${BASH_REMATCH[6]}-${BASH_REMATCH[7]}-${BASH_REMATCH[8]}"
-      echo "No date metadata in $file, using date from filename: $date_formatted"
+      && [[ "$original_name" =~ (^|[^0-9])((19|20)[0-9]{2})([0-9]{2})([0-9]{2})[_-]([0-9]{2})([0-9]{2})([0-9]{2}) ]]; then
+      candidate="${BASH_REMATCH[2]}-${BASH_REMATCH[4]}-${BASH_REMATCH[5]}_${BASH_REMATCH[6]}-${BASH_REMATCH[7]}-${BASH_REMATCH[8]}"
+      if is_valid_date "$candidate"; then
+          date_formatted="$candidate"
+          echo "No date metadata in $file, using date from filename: $date_formatted"
+      fi
   fi
 
   # Check if we successfully found a date.
